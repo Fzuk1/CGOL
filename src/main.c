@@ -23,13 +23,12 @@
 #define RENDER_HEIGHT HEIGHT
 
 // Game
-#define NUM_CELLS 100
+#define NUM_CELLS 150
 #define CELL_H (floor(HEIGHT / NUM_CELLS))
 #define CELL_W CELL_H
 
 // Color
 #define BLACK 0x00000000
-#define GREY 0xAAAAAAAA
 #define WHITE 0xFFFFFFFF
 
 /* STRUCTS */
@@ -41,23 +40,6 @@ typedef struct Window {
 typedef struct Position {
 	uint32_t x, y;
 } Position_t;
-
-#define NEIGHBOR_0(pos) (Position_t)				\
-	{(pos.x-1) % NUM_CELLS, (pos.y-1) % NUM_CELLS}
-#define NEIGHBOR_1(pos) (Position_t)				\
-	{(pos.x) % NUM_CELLS, (pos.y-1) % NUM_CELLS}
-#define NEIGHBOR_2(pos) (Position_t)				\
-	{(pos.x+1) % NUM_CELLS, (pos.y-1) % NUM_CELLS}
-#define NEIGHBOR_3(pos) (Position_t)				\
-	{(pos.x-1) % NUM_CELLS, (pos.y) % NUM_CELLS}
-#define NEIGHBOR_4(pos) (Position_t)				\
-	{(pos.x+1) % NUM_CELLS, (pos.y) % NUM_CELLS}
-#define NEIGHBOR_5(pos) (Position_t)				\
-	{(pos.x-1) % NUM_CELLS, (pos.y+1) % NUM_CELLS}
-#define NEIGHBOR_6(pos) (Position_t)				\
-	{(pos.x) % NUM_CELLS, (pos.y+1) % NUM_CELLS}
-#define NEIGHBOR_7(pos) (Position_t)				\
-	{(pos.x+1) % NUM_CELLS, (pos.y+1) % NUM_CELLS}
 
 typedef struct Cell {
 	Position_t pos;
@@ -148,29 +130,30 @@ void game_update(Cell_t *cell) {
 	// Put them into an array to iterate over it
 	Cell_t *arr[8] = {n0, n1, n2, n3, n4, n5, n6, n7};
 
+	// Count alive neighbors of current cell
 	size_t aliveNeighCtr = 0;
 	for (size_t i = 0; i < 8; i++) {
 		if (!arr[i]->state) {
 			aliveNeighCtr++;
 		}
 	}
-	// Rule 1
+
 	if (aliveNeighCtr == 2) {
-		// Do nothing, cell stays alive
+		// Rule 1: Stay alive
 		return;
 	}
 	else if (aliveNeighCtr == 3) {
 		if (!cell->state) {
-			// Do nothing, cell stays alive
+			// Rule 1: Stay alive
 			return;
 		}
 		else {
-			// Cell gets born
+			// Rule 2: Get born
 			cell->state = 0;
 		}
 	}
 	else if (aliveNeighCtr < 2 || aliveNeighCtr > 3) {
-		// Cell dies
+		// Rule 3: Die
 		cell->state = 1;
 	}
 
@@ -180,8 +163,10 @@ void game_update(Cell_t *cell) {
 void game_init() {
 	/*
 	  Init all Cells on the game board.
+	  TODO: Load initial board config from a file.
 	*/
 
+	// Here: random initialization
 	for (size_t y = 0; y < NUM_CELLS; y++) {
 		for (size_t x = 0; x < NUM_CELLS; x++) {
 			Grid.state[y][x].state = rand() % 15;
@@ -235,23 +220,23 @@ int main() {
 
 		render_grid();
 
-		// Loop over all Cells
+		// Loop over all cells
 		for (size_t y = 0; y < NUM_CELLS; y++) {
-			// Render current config
+			// Render current state
 			for (size_t x = 0; x < NUM_CELLS; x++) {
 				if (!Grid.state[y][x].state) {
 					render_fill_cell(Grid.state[y][x].pos, BLACK);
 				}
 
-				// Update
+				// Update cells
 				game_update(&Grid.state[y][x]);
 			}
 		}
 
-		// Show
+		// Show current state
 		SDL_UpdateWindowSurface(Window.win);
 
-		// Game speed
+		// Game speed in ms
 		SDL_Delay(1000);
 	}
 
