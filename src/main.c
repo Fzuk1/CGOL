@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 /* DEFINES */
 // Window
@@ -23,7 +24,7 @@
 #define RENDER_HEIGHT HEIGHT
 
 // Game
-#define NUM_CELLS 150
+#define NUM_CELLS 100
 #define CELL_H (floor(HEIGHT / NUM_CELLS))
 #define CELL_W CELL_H
 
@@ -44,6 +45,7 @@ typedef struct Position {
 typedef struct Cell {
 	Position_t pos;
 	uint8_t state;
+	uint8_t next;
 } Cell_t;
 
 typedef struct Grid {
@@ -108,6 +110,25 @@ void render_fill_cell(Position_t pos, uint32_t color) {
 	return;
 }
 
+void render_gen(TTF_Font *font, uint32_t gen) {
+	char text[32];
+	snprintf(text, sizeof(text), "Gen: %u", gen);
+	
+	SDL_Color black = {0, 0, 0, 0};
+
+	SDL_Surface *textSurf = TTF_RenderText_Solid(font, text, black);
+
+	// Blit text
+	SDL_Rect pos = {10, 10, 0, 0};
+	SDL_BlitSurface(textSurf, NULL, Window.surf, &pos);
+
+	SDL_UpdateWindowSurface(Window.win);
+
+	SDL_FreeSurface(textSurf);
+
+	return;
+}
+
 void game_update(Cell_t *cell) {
 	/*
 	  Update cells based on rules.
@@ -140,27 +161,48 @@ void game_update(Cell_t *cell) {
 
 	if (aliveNeighCtr == 2) {
 		// Rule 1: Stay alive
-		return;
+		if (cell->state == 0)
+			cell->next = 0;
+		else
+			cell->next = 1;
 	}
 	else if (aliveNeighCtr == 3) {
-		if (!cell->state) {
-			// Rule 1: Stay alive
-			return;
-		}
-		else {
-			// Rule 2: Get born
-			cell->state = 0;
-		}
+		// Rule 2: Get born
+		cell->next = 0;
 	}
 	else if (aliveNeighCtr < 2 || aliveNeighCtr > 3) {
 		// Rule 3: Die
-		cell->state = 1;
+		cell->next = 1;
+	}
+	else {
+		cell->next = 1;
 	}
 
 	return;
 }
 
-void game_init() {
+void game_init_from_file(char *fn) {
+	FILE *fp = fopen(fn, "r");
+
+	char buf[NUM_CELLS][NUM_CELLS] = { 0 };
+	for (size_t i = 0; i < NUM_CELLS; i++) {
+		fread(buf[i], 1, NUM_CELLS, fp);
+		fseek(fp, 1, SEEK_CUR);
+	}
+
+	for (size_t y = 0; y < NUM_CELLS; y++) {
+		for (size_t x = 0; x < NUM_CELLS; x++) {
+			size_t tmp = buf[y][x] - '0';
+			Grid.state[y][x].state = tmp;
+			Grid.state[y][x].pos = (Position_t) {x, y};
+		}
+	}
+
+	fclose(fp);
+	return;
+}
+
+void game_init_random() {
 	/*
 	  Init all Cells on the game board.
 	  TODO: Load initial board config from a file.
@@ -169,7 +211,7 @@ void game_init() {
 	// Here: random initialization
 	for (size_t y = 0; y < NUM_CELLS; y++) {
 		for (size_t x = 0; x < NUM_CELLS; x++) {
-			Grid.state[y][x].state = rand() % 15;
+			Grid.state[y][x].state = rand() % 10;
 			Grid.state[y][x].pos = (Position_t) {x, y};
 		}
 	}
@@ -177,11 +219,12 @@ void game_init() {
 	return;
 }
 
-int main() {
+int main(int32_t argc, char **argv) {
 
 	// Init randomness for init game state
 	srand(time(NULL));
 
+	// Init window
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 		printf("%s\n", SDL_GetError());
 		return 1;
@@ -198,10 +241,42 @@ int main() {
 		printf("%s\n", SDL_GetError());
 		return 1;
 	}
-
-	// Init game
-	game_init();
 	
+	// Init font
+	if (TTF_Init() < 0) {
+		printf("%s\n", TTF_GetError());
+		return 1;
+	}
+
+	TTF_Font *font = TTF_OpenFont("/usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf", 24);
+	if (!font) {
+		printf("%s\n", TTF_GetError());
+		return 1;
+	}
+
+	// Check for config file
+	if (argc == 2) {
+		size_t argSize = strlen(argv[1]);
+		char ending[5] = { 0 };
+		size_t j = 0;
+		for (size_t i = argSize - 5; i < argSize; i++) {
+			ending[j] = argv[1][i];
+			j++;
+		}
+
+		if (strcmp(ending, ".cgol") == 0)
+			game_init_from_file(argv[1]);
+		else
+			game_init_random();
+	}
+	else {
+		// Init game with random start config
+		game_init_random();
+	}
+	
+	uint32_t gen = 1;
+	uint8_t paused = 0;
+	uint32_t gameSpeed = 100;
 	uint8_t running = 1;
 	SDL_Event event;
 	while (running) {
@@ -211,7 +286,25 @@ int main() {
 			case SDL_QUIT:
 				running = 0;
 				break;
+
+			case SDL_KEYDOWN:
+				if (event.key.keysym.sym == SDLK_SPACE)
+					paused = !paused;
+				else if (event.key.keysym.sym == SDLK_RIGHT) {
+					if (gameSpeed > 1)
+						gameSpeed /= 10;
+				}
+				else if (event.key.keysym.sym == SDLK_LEFT) {
+					if (gameSpeed < 1000)
+						gameSpeed *= 10;
+				}
+				break;
 			}
+		}
+
+		if (paused) {
+			SDL_Delay(10);
+			continue;
 		}
 
 		/* Game events */
@@ -228,20 +321,32 @@ int main() {
 					render_fill_cell(Grid.state[y][x].pos, BLACK);
 				}
 
-				// Update cells
+				// Update cells next state
 				game_update(&Grid.state[y][x]);
 			}
 		}
+
+		// Update state
+		for (size_t y = 0; y < NUM_CELLS; y++) {
+			for (size_t x = 0; x < NUM_CELLS; x++) {
+				Grid.state[y][x].state = Grid.state[y][x].next;
+			}
+		}
+		
+		// New generation
+		render_gen(font, gen);
+		gen++;
 
 		// Show current state
 		SDL_UpdateWindowSurface(Window.win);
 
 		// Game speed in ms
-		SDL_Delay(1000);
+		SDL_Delay(gameSpeed);
 	}
 
 	SDL_DestroyWindowSurface(Window.win);
 	SDL_DestroyWindow(Window.win);
+	TTF_Quit();
 	SDL_Quit();
 	
 	return 0;
